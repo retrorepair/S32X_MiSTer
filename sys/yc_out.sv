@@ -47,7 +47,8 @@ wire [7:0] red_i = din[23:16];
 wire [7:0] green_i = din[15:8];
 wire [7:0] blue_i = din[7:0];
 
-logic [9:0] red1, blue1, green1,red2, blue2, green2, red3, blue3, green3,red4, blue4, green4,red, blue, green;
+logic [9:0] red_1, blue_1, green_1, red_2, blue_2, green_2;
+logic [9:0] red_3, blue_3, green_3, red_4, blue_4, green_4, red, blue, green;
 
 typedef struct {
 	logic signed [20:0] y;
@@ -104,6 +105,7 @@ wire signed [10:0] chroma_SIN_LUT[256] = '{
 reg [39:0] phase_accum;
 reg PAL_FLIP = 1'd0;
 reg	PAL_line_count = 1'd0;
+
 /**************************************
 	Generate Luma and Chroma Signals
 ***************************************/
@@ -112,25 +114,23 @@ always_ff @(posedge clk) begin
 	for (logic [3:0] x = 0; x < (MAX_PHASES - 1'd1); x = x + 1'd1) begin
 		phase[x + 1] <= phase[x];
 	end
-// Generate the LUT values using the phase accumulator reference.
-	phase_accum <= phase_accum + PHASE_INC;
-	chroma_LUT <= phase_accum[39:32];
-	
-	red1 <= red_i;
-	blue1 <= blue_i;
-	green1 <= green_i;
-	red2 <= red1;
-	blue2 <= blue1;
-	green2 <= green1;
-	red3 <= red2;
-	blue3 <= blue2;
-	green3 <= green2;
-	red4 <= red3;
-	blue4 <= blue3;
-	green4 <= green3;
-	red <= (red1 + red2 + red3 + red4)>>2;
-	blue <= (blue1 + blue2 + blue3 + blue4)>>2;
-	green <= (green1 + green2 + green2 + green4)>>2;
+
+	// Color Averaging to help with color accuracy 
+	red_1 <= red_i;
+	blue_1 <= blue_i;
+	green_1 <= green_i;
+	red_2 <= red_1;
+	blue_2 <= blue_1;
+	green_2 <= green_1;
+	red_3 <= red_2;
+	blue_3 <= blue_2;
+	green_3 <= green_2;
+	red_4 <= red_3;
+	blue_4 <= blue_3;
+	green_4 <= green_3;
+	red <= (red_1 + red_2 + red_3 + red_4)>>2;
+	blue <= (blue_1 + blue_2 + blue_3 + blue_4)>>2;
+	green <= (green_1 + green_2 + green_2 + green_4)>>2;
 
 	// Calculate Luma signal
 	phase[0].y <= {red, 8'd0} + {red, 5'd0}+ {red, 4'd0} + {red, 1'd0};
@@ -139,6 +139,9 @@ always_ff @(posedge clk) begin
 	phase[3].y <= phase[0].y + phase[1].y + phase[2].y;
 	phase[4].y <= phase[3].y;
 
+	// Generate the LUT values using the phase accumulator reference.
+	phase_accum <= phase_accum + PHASE_INC;
+	chroma_LUT <= phase_accum[39:32];
 		
 	// Adjust SINE carrier reference for PAL (Also adjust for PAL Switch)
 	if (PAL_EN) begin
@@ -147,7 +150,7 @@ always_ff @(posedge clk) begin
 		else
 			chroma_LUT_BURST <= chroma_LUT + 8'd96;
 	end else  // Adjust SINE carrier reference for NTSC
-		chroma_LUT_BURST <= chroma_LUT + 8'd132;
+		chroma_LUT_BURST <= chroma_LUT + 8'd128;
 		
 	// Prepare LUT values for sin / cos (+90 degress)
 	chroma_LUT_SIN <= chroma_LUT;
@@ -175,7 +178,7 @@ always_ff @(posedge clk) begin
 			PAL_line_count <= ~PAL_line_count;
 		end
 	end	else begin // Generate Colorburst for 9 cycles 
-		if (cburst_phase >= 'd60 && cburst_phase <= 'd160) begin // Start the color burst signal at 40 samples or 0.9 us
+		if (cburst_phase >= 'd40 && cburst_phase <= 'd240) begin // Start the color burst signal at 40 samples or 0.9 us
 			// COLORBURST SIGNAL GENERATION (9 CYCLES ONLY or between count 40 - 240)
 			phase[2].u <= $signed({chroma_SIN_LUT[chroma_LUT_BURST],5'd0});
 			phase[2].v <= 21'b0;
@@ -188,12 +191,12 @@ always_ff @(posedge clk) begin
 			U,V are both multiplied by 1024 earlier to scale for the decimals in the YUV colorspace conversion. 
 			U and V are both divided by 2^12 to divide by 10 for the scaling above as well as chroma subsampling from 4:4:4 to 4:1:1 (25% or from 8 bit to 6 bit)
 			*/
-			phase[2].u <= $signed((phase[1].u)>>>12) * $signed(chroma_SIN_LUT[chroma_LUT_SIN]);
-			phase[2].v <= $signed((phase[1].v)>>>12) * $signed(chroma_SIN_LUT[chroma_LUT_COS]);		
+			phase[2].u <= $signed((phase[1].u)>>>10) * $signed(chroma_SIN_LUT[chroma_LUT_SIN]);
+			phase[2].v <= $signed((phase[1].v)>>>10) * $signed(chroma_SIN_LUT[chroma_LUT_COS]);		
 	
 			// Divide U*sin(wt) and V*cos(wt) to fit results to 8 bit 
-			phase[3].u <= $signed(phase[2].u[20:7]) + $signed(phase[2].u[20:8]) + $signed(phase[2].u[20:13]);
-			phase[3].v <= $signed(phase[2].v[20:7]) + $signed(phase[2].v[20:8]) + $signed(phase[2].u[20:13]);
+			phase[3].u <= $signed(phase[2].u[20:9]) + $signed(phase[2].u[20:10]) + $signed(phase[2].u[20:14]);
+			phase[3].v <= $signed(phase[2].v[20:9]) + $signed(phase[2].v[20:10]) + $signed(phase[2].u[20:14]);
 		end
 
 		// Stop the colorburst timer as its only needed for the initial pulse
