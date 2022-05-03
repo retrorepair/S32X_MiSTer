@@ -34,7 +34,11 @@ module emu
 
 	//Base video clock. Usually equals to CLK_SYS.
 	output        CLK_VIDEO,
-
+`ifdef MISTER_ENABLE_YC
+	output [39:0] CHROMA_PHASE_INC,
+	output        YC_EN,
+	output        PALFLAG,
+`endif
 	//Multiple resolutions are supported using different CE_PIXEL rates.
 	//Must be based on CLK_VIDEO
 	output        CE_PIXEL,
@@ -268,6 +272,7 @@ localparam CONF_STR = {
 	"P1oGH,Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"P1OU,320x224 Aspect,Original,Corrected;",
 	"P1O13,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+	"OC,Video Signal,RGBS/YPbPr,Y/C;",
 	"P1-;",
 	"d5P1o2,Vertical Crop,Disabled,216p(5x);",
 	"d5P1oIL,Crop Offset,0,2,4,8,10,12,-12,-10,-8,-6,-4,-2;",
@@ -313,6 +318,24 @@ localparam CONF_STR = {
 	"jp,Y,B,A,Start,Select,L,X,R;", // positional map to SNES layout (3 button friendly) 
 	"V,v",`BUILD_DATE
 };
+
+
+/* 	Phase Accumulator Increments (Fractional Size 12, look up size 7 bit, total 19 bits)
+	Increment Calculation - (Output Clock * 2 ^ Word Size) / Reference Clock
+	Example 
+	NTSC = 3.579545 
+	W = 40 ( 32 bit fraction, 8 bit look up reference) 
+	Ref CLK = 42.954544 (This could us any clock) 
+	
+	NTSC_Inc = 3.579545333 * 2 ^ 40 / 42.954544 = 91625968981 
+*/
+
+// SET PAL and NTSC TIMING
+`ifdef MISTER_ENABLE_YC
+assign CHROMA_PHASE_INC = PALFLAG ? 40'd45812986213 : 40'd36650387593; 
+assign YC_EN =  status[12];
+assign PALFLAG = PAL;
+`endif
 
 wire [63:0] status;
 wire  [1:0] buttons;
